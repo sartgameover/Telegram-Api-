@@ -449,9 +449,17 @@ const initials = n => String(n || '?').trim().split(/\s+/).slice(0, 2).map(x => 
 const hm = t => t || '';
 
 /* ───────── стан ───────── */
-const S = { ob: null, me: null, wk: null, sel: null, editWd: 1, period: 'week', jdate: null, files: [] };
+const S = { ob: null, me: null, wk: null, sel: null, editWd: 1, period: 'week', jdate: null, files: [], joinCode: '' };
 const DEV = new URLSearchParams(location.search).get('dev') || sessionStorage.getItem('dev');
 if (DEV) sessionStorage.setItem('dev', DEV);
+function launchInviteCode() {
+  const params = new URLSearchParams(location.search);
+  const raw = (TG && TG.initDataUnsafe && TG.initDataUnsafe.start_param) ||
+    params.get('startapp') || params.get('join') || '';
+  const match = String(raw).match(/(?:join_)?([a-z0-9]{4,})/i);
+  return match ? match[1].toLowerCase() : '';
+}
+
 
 async function api(method, path, body, raw) {
   if (window.DEMO && (DEMO.on || location.protocol === 'file:')) { DEMO.on = true; return DEMO.call(method, path, body, raw); }
@@ -542,6 +550,10 @@ let obTimer;
 function renderOnboarding() {
   const m = S.me;
   clearInterval(obTimer);
+  if (!S.ob && !m.group && !m.my_request) {
+    const code = launchInviteCode();
+    if (code) { S.ob = 'student'; S.joinCode = code; }
+  }
   const hello = `<div class="top"><div class="ava">🎓</div><div class="grow"><h1>Привіт, ${esc(m.user.name)}!</h1><div class="sub">Староста бот</div></div></div>`;
   if (m.my_request) {
     view().innerHTML = hello + `<div class="card hero"><div class="kicker">ЗАЯВКА НАДІСЛАНА</div><h2>${esc(m.my_request.group)}</h2>
@@ -564,8 +576,10 @@ function renderOnboarding() {
       <label class="f">Назва групи<input id="gname" maxlength="60" placeholder="Наприклад, 9-А клас"></label>
       <button class="btn pri block" data-act="createGroup">Створити групу</button></div>` :
     `<div class="card"><h3>🎓 Вступ до групи</h3>
-      <p class="sub" style="margin-bottom:10px">Вставте посилання-запрошення або код від старости. Староста отримає заявку й прийме вас.</p>
-      <label class="f">Посилання або код<input id="gcode" placeholder="https://t.me/…?start=join_…"></label>
+      <p class="sub" style="margin-bottom:10px">Введіть своє ім’я та прізвище. Після цього староста отримає заявку на вступ.</p>
+      <label class="f">Ім’я<input id="jfirst" maxlength="30" autocomplete="given-name" placeholder="Наприклад, Артур" value="${esc(TG && TG.initDataUnsafe && TG.initDataUnsafe.user ? TG.initDataUnsafe.user.first_name || '' : '')}"></label>
+      <label class="f">Прізвище<input id="jlast" maxlength="40" autocomplete="family-name" placeholder="Наприклад, Петренко" value="${esc(TG && TG.initDataUnsafe && TG.initDataUnsafe.user ? TG.initDataUnsafe.user.last_name || '' : '')}"></label>
+      <label class="f">Посилання або код групи<input id="gcode" value="${esc(S.joinCode)}" placeholder="https://t.me/…?start=join_…" autocomplete="off"></label>
       <button class="btn pri block" data-act="joinGroup">Надіслати заявку</button></div>`);
 }
 
@@ -815,7 +829,7 @@ async function students() {
     return `<div class="stu" data-act="stuOpen" data-id="${s.id}"><div class="av2">${esc(initials(s.name))}</div><div class="t"><b>${esc(s.name)}${s.me ? ' (ви)' : ''}</b></div>${tags.join(' ')}</div>`;
   };
   let h = `<div class="pagehead"><h1>Учні</h1></div><p class="lead">${act.length} у групі · Керує: ${esc(g.manager || '—')}</p>`;
-  h += `<div class="row" style="margin-bottom:12px"><button class="btn pri" data-act="invite">🔗 Запросити</button></div>`;
+  h += `<div class="row" style="margin-bottom:12px"><button class="btn pri" data-act="invite">📋 Копіювати посилання</button><button class="btn" data-act="shareInvite">↗️ Поділитися</button></div>`;
   if (g.can_manage) {
     const rq = (await api('GET', '/api/requests')).items;
     if (rq.length) h += `<div class="card"><h3>➕ Заявки на вступ · ${rq.length}</h3>${rq.map(x => `<div class="stu" style="padding:8px 0"><div class="av2">${esc(initials(x.name))}</div><div class="t"><b>${esc(x.name)}</b></div>
@@ -966,7 +980,27 @@ async function settings() {
     <div class="sect"><span>КАНІКУЛИ І ВИХІДНІ</span></div><div class="card">${v.items.map(x => `<div class="les" style="padding:8px 0"><div class="t"><b>${esc(x.title)}</b><span>${dlabel(x.start, true)} – ${dlabel(x.end, true)}</span></div><a data-act="vacDel" data-id="${x.id}">✕</a></div>`).join('') || '<p class="sm">Немає</p>'}
     <div class="two" style="margin-top:8px"><label class="f">Від<input type="date" id="v_s"></label><label class="f">До<input type="date" id="v_e"></label></div>
     <label class="f">Назва<input id="v_t" placeholder="Осінні канікули"></label><button class="btn block" data-act="vacAdd">＋ Додати</button></div>
-    <div class="card"><h3>🔗 Запрошення</h3><p class="sub" style="word-break:break-all">${esc(g.invite)}</p><button class="btn block" data-act="invite">Надіслати посилання</button></div>`;
+    <div class="card"><h3>🔗 Запрошення</h3><p class="sub" style="word-break:break-all">${esc(g.invite)}</p><div class="two"><button class="btn pri" data-act="invite">📋 Копіювати посилання</button><button class="btn" data-act="shareInvite">↗️ Поділитися</button></div><button class="btn block" data-act="copyCode">Копіювати код групи</button></div>`;
+}
+
+/* ───────── буфер обміну ───────── */
+async function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    try { await navigator.clipboard.writeText(text); return true; } catch (e) {}
+  }
+  const area = document.createElement('textarea');
+  area.value = text;
+  area.setAttribute('readonly', '');
+  area.style.position = 'fixed';
+  area.style.opacity = '0';
+  area.style.pointerEvents = 'none';
+  document.body.appendChild(area);
+  area.focus(); area.select();
+  let copied = false;
+  try { copied = document.execCommand('copy'); } catch (e) {}
+  area.remove();
+  if (!copied) throw new Error('Не вдалося скопіювати. Спробуйте ще раз або скопіюйте посилання вручну.');
+  return true;
 }
 
 /* ───────── дії (делегування кліків) ───────── */
@@ -981,7 +1015,7 @@ const A = {
     if (r === 'starosta' && !S.me.can_create) return toast(S.me.was_starosta ? 'Ви вже були старостою — повторно обрати цю роль не можна' : 'Ви вже в групі', true);
     S.ob = r || null; renderOnboarding();
   },
-  joinGroup: () => safe(async () => { const r = await api('POST', '/api/group/join', { code: val('gcode') }); toast('Заявку надіслано старості'); await reloadMe(); renderOnboarding(); }),
+  joinGroup: () => safe(async () => { const first_name = (val('jfirst') || '').trim(); const last_name = (val('jlast') || '').trim(); const code = (val('gcode') || '').trim(); if (!first_name || !last_name) return toast('Введіть ім’я та прізвище', true); if (!code) return toast('Вставте посилання або код групи', true); await api('POST', '/api/group/join', { code, first_name, last_name }); S.joinCode = ''; toast('Заявку надіслано старості ✓'); await reloadMe(); renderOnboarding(); }),
   cancelRequest: () => safe(async () => { await api('POST', '/api/group/join/cancel', {}); S.ob = null; await reloadMe(); renderOnboarding(); }),
   obRefresh: () => safe(async () => { await reloadMe(); S.me.group ? (go('home'), render()) : (toast('Староста ще не відповів'), renderOnboarding()); }),
   reqDecide: el => safe(async () => { await api('POST', '/api/requests/' + el.dataset.id, { approve: +el.dataset.ok === 1 }); toast(+el.dataset.ok ? 'Учня прийнято ✓' : 'Заявку відхилено'); render(); }),
@@ -1021,11 +1055,14 @@ const A = {
     toast('Розклад збережено ✓'); editor(S.editWd);
   }),
   // учні
-  invite: () => {
+  invite: () => safe(async () => { await copyText(S.me.group.invite); toast('Посилання скопійовано в буфер обміну ✓'); }),
+  shareInvite: () => {
     const link = S.me.group.invite, text = `Приєднуйся до групи «${S.me.group.name}» у Староста боті`;
     if (TG && TG.openTelegramLink) TG.openTelegramLink('https://t.me/share/url?url=' + encodeURIComponent(link) + '&text=' + encodeURIComponent(text));
-    else { navigator.clipboard && navigator.clipboard.writeText(link); toast('Посилання скопійовано'); }
+    else if (navigator.share) navigator.share({ title: 'Запрошення до групи', text, url: link }).catch(() => {});
+    else A.invite();
   },
+  copyCode: () => safe(async () => { await copyText(S.me.group.code); toast('Код групи скопійовано ✓'); }),
   stuOpen: el => stuOpen(el.dataset.id),
   stuRename: el => {
     const s = (S.stu || []).find(x => x.id === +el.dataset.id) || { name: S.me.member_name };
